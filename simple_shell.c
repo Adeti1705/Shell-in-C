@@ -69,9 +69,34 @@ bool hasPipes(char *str)
     }
     return hasPipes;
 }
-
-int main(int argc, char const *argv[])
-{
+void execute(char *name){
+    FILE*fobj=fopen(name,'r');
+    if(fobj==NULL){
+        printf("Error in opening the file\n");
+        return;
+    }
+    char line[100];
+    while (fgets(line,100,fobj)!=NULL){
+        int len = strlen(line);
+        if (len>0 &&(line[len-1]=='\n' || line[len-1]=='\r')){
+            line[len-1]='\0';
+        }
+        if (len==0){
+            continue;
+        }
+        //need to edit
+        if (check_for_pipes(line)) {
+            char **command_1 = break_pipes_1(line);
+            char ***command_2 = break_pipes_2(command_1);
+            executePipe(command_2);
+        } else {
+            char **command_1 = break_spaces(line);
+            executeCommand(command_1);
+        }
+    }
+    fclose(fobj);
+}
+int main(int argc, char const *argv[]){
     sig_handler();
     char *history = (char *)malloc(100);
     char *cmd;
@@ -85,7 +110,7 @@ int main(int argc, char const *argv[])
     while (1)
     {
         getcwd(current_dir, sizeof(current_dir));
-        printf("Shell>%s>>> ", current_dir);
+        printf(">%s>>> ", current_dir);
         cmd = User_Input();
         if (inputFlag == true)
         {
@@ -93,7 +118,8 @@ int main(int argc, char const *argv[])
             // check for &
             long start_time = current_time();
             if (cmd[0] == '@')
-            {           
+            {   
+                cmd[strlen(cmd) - 1] = '\0';     
                 execute_cmd(++cmd);
             }
     }
