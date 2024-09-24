@@ -111,24 +111,84 @@ void launch(char** argv) {  // check
         }
     }
 }
-char ** break_cmd(char *cmd_line){
+char ** break_delim(char *cmd_line, char* delim){
     char **word_array = (char **)malloc(100*sizeof(char *));
     if (word_array == NULL)
     {
         printf("Error in allocating memory for command.\n");
         exit(1);
     }
-    char * separator =" ";
-    char *word = strtok(cmd_line, separator);
+    char *word = strtok(cmd_line, delim);
     int i = 0;
     while (word != NULL)
     {
         word_array[i] = word;
         i++;
-        word = strtok(NULL, separator);
+        word = strtok(NULL, delim);
     }
     word_array[i] = NULL;
     return word_array;
+}
+
+void pipe_execute(char ***commands) {  
+    int i = 0, pid;
+    int inputfd = STDIN_FILENO;  
+
+    while (commands[i] != NULL) {
+        int fd[2];
+        pipe(fd);
+        pid = fork();
+
+        if (pid < 0) {
+            printf("Forking child failed.\n");
+            exit(1);
+
+        } else if (pid == 0) {
+
+            close(fd[0]); // closing read end
+            if (inputfd != STDIN_FILENO) {
+                dup2(inputfd, STDIN_FILENO);
+                close(inputfd);
+            }
+            if (commands[i + 1] != NULL) {
+                dup2(fd[1], STDOUT_FILENO);
+            }
+            execvp(commands[i][0], commands[i]);
+            exit(1);
+        } else {
+            close(fd[1]); // closing write end
+            if (inputfd != STDIN_FILENO) {
+                close(inputfd);
+            }
+            inputfd = fd[0];
+            i++;
+        }
+    }
+    int wait_process;
+    
+    do
+    {
+        wait_process = wait(NULL);
+    } while (wait_process > 0);
+    
+}
+
+char*** pipe_manager(char** cmds){
+    char*** commands=(char***)malloc(sizeof(char**)*100);
+    if(commands==NULL){
+        printf("Failed to allocate memory");
+        exit(1);
+    }
+    int len=0;
+    for(int i=0; cmds[i]!=NULL; i++){
+        len=i;
+    }
+    int j=0;
+    for(j=0; j<len; j++){
+        commands[j]=break_delim(cmds[j],' \n');
+    }
+    commands[j]=NULL;
+    return commands;
 }
 
 void execute(char *name){
@@ -147,12 +207,12 @@ void execute(char *name){
             continue;
         }
         //need to edit
-        if (check_for_pipes(line)) {
-            char **command_1 = break_pipes_1(line);
-            char ***command_2 = break_pipes_2(command_1);
-            executePipe(command_2);
+        if (hasPipes(line)) {
+            char **command_1 = break_delim(line,'|');
+            char ***command_2 = pipe_manager(command_1);
+            pipe_execute(command_2);
         } else {
-            char **command = break_cmd(line);
+            char **command = break_delim(line, ' \n');
             launch(command);
         }
     }
@@ -164,7 +224,7 @@ int pid_history[100], child_pid;
 long time_history[100][2], start_time;
 int c_hist = 0;
 
-void add_to_history(const char *command, int pid, long start_time_ms, long end_time_ms) {
+int add_to_history(const char *command, int pid, long start_time_ms, long end_time_ms) {
     if (c_hist < 100) { 
         strcpy(history[c_hist], command);   
         pid_history[c_hist] = pid;         
@@ -212,6 +272,14 @@ int main(int argc, char const *argv[]){
                 cmd[strlen(cmd) - 1] = '\0';     
                 execute_cmd(++cmd);
             }
+
+
+
+
+
+            c_hist=add_to_history(history,pid_history,start_time,current_time());
         }
+
+        
     }
 }
