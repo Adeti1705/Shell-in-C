@@ -9,6 +9,13 @@
 #include <sys/time.h>
 #include <time.h>
 
+void my_handler(int signum) { // check
+    if (signum == SIGINT) {
+        printf("\n-------------------------------\n");
+        display_history();        
+        exit(0);
+    }
+}
 
 void my_handler(int signum) { // check
     if (signum == SIGINT) {
@@ -78,6 +85,52 @@ bool hasPipes(char *str)
     }
     return hasPipes;
 }
+void launch(char** argv) {  // check
+    int status = fork();
+  
+    if (status < 0) {
+        printf("Forking child failed.\n");
+        exit(1);
+    }
+    else if (status == 0) {
+        execvp(argv[0], argv); 
+        printf("Command failed.\n");
+        exit(1);
+    }
+    else { 
+        int ret;
+        int pid = wait(&ret);
+        if (WIFEXITED(ret)) {
+            if (WEXITSTATUS(ret) == -1)
+            {
+                printf("Exit = -1\n");
+            }
+        } 
+        else {
+            printf("\nAbnormal termination of :%d\n" , pid);
+        }
+    }
+}
+char ** break_cmd(char *cmd_line){
+    char **word_array = (char **)malloc(100*sizeof(char *));
+    if (word_array == NULL)
+    {
+        printf("Error in allocating memory for command.\n");
+        exit(1);
+    }
+    char * separator =" ";
+    char *word = strtok(cmd_line, separator);
+    int i = 0;
+    while (word != NULL)
+    {
+        word_array[i] = word;
+        i++;
+        word = strtok(NULL, separator);
+    }
+    word_array[i] = NULL;
+    return word_array;
+}
+
 void execute(char *name){
     FILE*fobj=fopen(name,'r');
     if(fobj==NULL){
@@ -99,8 +152,8 @@ void execute(char *name){
             char ***command_2 = break_pipes_2(command_1);
             executePipe(command_2);
         } else {
-            char **command_1 = break_spaces(line);
-            executeCommand(command_1);
+            char **command = break_cmd(line);
+            launch(command);
         }
     }
     fclose(fobj);
@@ -129,7 +182,7 @@ void print_history() {
         printf("Command: %s\n", history[i]);
         printf("PID: %d\n", pid_history[i]);
         printf("Start Time: %ld\n", time_history[i][0]);
-        printf("End Time: %ld\n", time_history[i][1]);
+        printf("Total duration: %ld\n", time_history[i][1]-time_history[i][0]);
     }
 }
 
