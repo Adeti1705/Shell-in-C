@@ -9,6 +9,15 @@
 #include <sys/time.h>
 #include <time.h>
 
+
+void my_handler(int signum) { // check
+    if (signum == SIGINT) {
+        printf("\n-------------------------------\n");
+        display_history();        
+        exit(0);
+    }
+}
+
 void sig_handler()
 {
     struct sigaction sig;
@@ -96,6 +105,34 @@ void execute(char *name){
     }
     fclose(fobj);
 }
+
+char history[100][100];
+int pid_history[100], child_pid;
+long time_history[100][2], start_time;
+int c_hist = 0;
+
+void add_to_history(const char *command, int pid, long start_time_ms, long end_time_ms) {
+    if (c_hist < 100) { 
+        strcpy(history[c_hist], command);   
+        pid_history[c_hist] = pid;         
+        time_history[c_hist][0] = start_time_ms;  
+        time_history[c_hist][1] = end_time_ms;    
+        c_hist++;  
+    } else {
+        printf("History is full. Cannot add more entries.\n");
+    }
+}
+
+void print_history() {
+    printf("\n Command History:\n");
+    for (int i = 0; i < c_hist; i++) {
+        printf("Command: %s\n", history[i]);
+        printf("PID: %d\n", pid_history[i]);
+        printf("Start Time: %ld\n", time_history[i][0]);
+        printf("End Time: %ld\n", time_history[i][1]);
+    }
+}
+
 int main(int argc, char const *argv[]){
     sig_handler();
     char *history = (char *)malloc(100);
@@ -122,5 +159,6 @@ int main(int argc, char const *argv[]){
                 cmd[strlen(cmd) - 1] = '\0';     
                 execute_cmd(++cmd);
             }
+        }
     }
 }
