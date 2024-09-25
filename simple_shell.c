@@ -262,22 +262,21 @@ int main()
         {
             char **command_1 = break_delim(cmd, "|");
             char ***command_2 = pipe_manager(command_1);
-            pid = pipe_execute(command_2); // Pipe execution not yet supporting background
+            pid = pipe_execute(command_2); // pipe execution not yet supporting background
         }
         else
         {
             char **command = break_delim(cmd, " \n");
-            pid = launch(command, background); // Pass the background flag
+            pid = launch(command, background); // pass the background flag
         }
 
-        // Only add to history for foreground processes
+        // only add to history for foreground processes
         if (!background)
         {
             add_to_history(cmd, pid, start_time, current_time());
         }
 
         free(cmd);
-        free(history);
     }
     return 0;
 }
