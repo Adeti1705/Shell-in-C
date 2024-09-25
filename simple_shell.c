@@ -8,19 +8,41 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <time.h>
+#include <signal.h>
 
-void my_handler(int signum) { // check
-    if (signum == SIGINT) {
-        printf("\n-------------------------------\n");
-        display_history();        
-        exit(0);
+char history[100][100];
+int pid_history[100];
+long time_history[100][2], start_time;
+int c_hist = 0;
+
+
+int add_to_history(const char *command, int pid, long start_time_ms, long end_time_ms) {
+    //extern long time_history[100][2]; // Declare time_history as an external variable
+    if (c_hist < 100) { 
+        strcpy(history[c_hist], command);   
+        pid_history[c_hist] = pid;         
+        time_history[c_hist][0] = start_time_ms;  
+        time_history[c_hist][1] = end_time_ms;    
+        c_hist++;  
+    } else {
+        printf("History is full. Cannot add more than 100 commands.\n");
+    }
+}
+
+void print_history(){
+    printf("\n Command History:\n");
+    for (int i = 0; i < c_hist; i++){
+        printf("Command: %s\n", history[i]);
+        printf("PID: %d\n", pid_history[i]);
+        printf("Start Time: %ld\n", time_history[i][0]);
+        printf("Total duration: %ld\n", time_history[i][1]-time_history[i][0]);
     }
 }
 
 void my_handler(int signum) { // check
     if (signum == SIGINT) {
         printf("\n-------------------------------\n");
-        display_history();        
+        print_history();     
         exit(0);
     }
 }
@@ -72,8 +94,8 @@ long current_time()
 
 bool hasPipes(char *str)
 {
-    char *eof = '\0';
-    char *pipe = '|';
+    char eof = '\0';
+    char pipe = '|';
     bool hasPipes = false;
     for (int i = 0; str[i] != eof; i++)
     {
@@ -85,21 +107,21 @@ bool hasPipes(char *str)
     }
     return hasPipes;
 }
-void launch(char** argv) {  // check
+int launch(char** command_line) {  // check
     int status = fork();
-  
+    int pid=-1;
     if (status < 0) {
         printf("Forking child failed.\n");
         exit(1);
     }
     else if (status == 0) {
-        execvp(argv[0], argv); 
+        execvp(command_line[0], command_line); 
         printf("Command failed.\n");
         exit(1);
     }
     else { 
         int ret;
-        int pid = wait(&ret);
+        pid = wait(&ret);
         if (WIFEXITED(ret)) {
             if (WEXITSTATUS(ret) == -1)
             {
@@ -110,67 +132,71 @@ void launch(char** argv) {  // check
             printf("\nAbnormal termination of :%d\n" , pid);
         }
     }
+    return pid;
 }
-char ** break_delim(char *cmd_line, char* delim){
+char ** break_delim(char *cmd_line, char delim){
+    char* separator=delim;
     char **word_array = (char **)malloc(100*sizeof(char *));
     if (word_array == NULL)
     {
         printf("Error in allocating memory for command.\n");
         exit(1);
     }
-    char *word = strtok(cmd_line, delim);
+    char *word = strtok(cmd_line, separator);
     int i = 0;
     while (word != NULL)
     {
         word_array[i] = word;
         i++;
-        word = strtok(NULL, delim);
+        word = strtok(NULL, separator);
     }
     word_array[i] = NULL;
     return word_array;
 }
 
-void pipe_execute(char ***commands) {  
-    int i = 0, pid;
-    int inputfd = STDIN_FILENO;  
-
+int pipe_execute(char ***commands) {
+    int i = 0;
+    int pid;
+    int inputfd = STDIN_FILENO;
+    int lastChildPID = -1;
     while (commands[i] != NULL) {
-        int fd[2];
-        pipe(fd);
+        int pipefd[2];
+        pipe(pipefd);
         pid = fork();
-
         if (pid < 0) {
-            printf("Forking child failed.\n");
-            exit(1);
-
-        } else if (pid == 0) {
-
-            close(fd[0]); // closing read end
+            perror("Error creating child process");
+            exit(EXIT_FAILURE);
+        } 
+        else if (pid == 0) {
+            // In child process
+            close(pipefd[0]); // Close the reading end of the pipe
             if (inputfd != STDIN_FILENO) {
-                dup2(inputfd, STDIN_FILENO);
-                close(inputfd);
+                dup2(inputfd, STDIN_FILENO);  // Redirect input
+                close(inputfd); 
             }
             if (commands[i + 1] != NULL) {
-                dup2(fd[1], STDOUT_FILENO);
+                dup2(pipefd[1], STDOUT_FILENO);  // Redirect output
             }
+            close(pipefd[1]);
             execvp(commands[i][0], commands[i]);
-            exit(1);
-        } else {
-            close(fd[1]); // closing write end
+            perror("execvp failed");
+            exit(EXIT_FAILURE);
+        } 
+        else {
+            // In parent process
+            close(pipefd[1]);  // Close the writing end of the pipe
             if (inputfd != STDIN_FILENO) {
                 close(inputfd);
             }
-            inputfd = fd[0];
+            inputfd = pipefd[0];  // Move the pipe's read end to input for the next process
+            lastChildPID = pid;   // Save the last child's PID
             i++;
         }
     }
-    int wait_process;
-    
-    do
-    {
-        wait_process = wait(NULL);
-    } while (wait_process > 0);
-    
+    // Wait for all child processes to finish
+    int status;
+    while (wait(&status) > 0);
+    return lastChildPID;  // Return PID of the last child process
 }
 
 char*** pipe_manager(char** cmds){
@@ -191,12 +217,13 @@ char*** pipe_manager(char** cmds){
     return commands;
 }
 
-void execute(char *name){
+int execute(char *name){
     FILE*fobj=fopen(name,'r');
     if(fobj==NULL){
         printf("Error in opening the file\n");
         return;
     }
+    int pid=-1;
     char line[100];
     while (fgets(line,100,fobj)!=NULL){
         int len = strlen(line);
@@ -210,40 +237,15 @@ void execute(char *name){
         if (hasPipes(line)) {
             char **command_1 = break_delim(line,'|');
             char ***command_2 = pipe_manager(command_1);
-            pipe_execute(command_2);
+            pid=pipe_execute(command_2);
+
         } else {
             char **command = break_delim(line, ' \n');
-            launch(command);
+            pid=launch(command);
         }
     }
     fclose(fobj);
-}
-
-char history[100][100];
-int pid_history[100], child_pid;
-long time_history[100][2], start_time;
-int c_hist = 0;
-
-int add_to_history(const char *command, int pid, long start_time_ms, long end_time_ms) {
-    if (c_hist < 100) { 
-        strcpy(history[c_hist], command);   
-        pid_history[c_hist] = pid;         
-        time_history[c_hist][0] = start_time_ms;  
-        time_history[c_hist][1] = end_time_ms;    
-        c_hist++;  
-    } else {
-        printf("History is full. Cannot add more entries.\n");
-    }
-}
-
-void print_history() {
-    printf("\n Command History:\n");
-    for (int i = 0; i < c_hist; i++) {
-        printf("Command: %s\n", history[i]);
-        printf("PID: %d\n", pid_history[i]);
-        printf("Start Time: %ld\n", time_history[i][0]);
-        printf("Total duration: %ld\n", time_history[i][1]-time_history[i][0]);
-    }
+    return pid;
 }
 
 int main(int argc, char const *argv[]){
@@ -257,29 +259,33 @@ int main(int argc, char const *argv[]){
     }
     char current_dir[100];
     printf("\n Shell Starting...--------------------------------\n");
-    while (1)
-    {
+    while (1){
+        int pid=-1;
         getcwd(current_dir, sizeof(current_dir));
         printf(">%s>>> ", current_dir);
         cmd = User_Input();
-        if (inputFlag == true)
-        {
+        if (inputFlag == true){
             strcpy(history, cmd);
             // check for &
             long start_time = current_time();
             if (cmd[0] == '@')
             {   
                 cmd[strlen(cmd) - 1] = '\0';     
-                execute_cmd(++cmd);
+                pid=execute(++cmd);
             }
-
-
-
-
-
-            c_hist=add_to_history(history,pid_history,start_time,current_time());
+            else{
+                if (hasPipes(cmd)){
+                    char **command_1 = break_delim(cmd, '|');
+                    char ***command_2 = pipe_manager(command_1);
+                    pid=pipe_execute(command_2);
+                } else {
+                    char **command = break_delim(cmd, ' \n');
+                    pid=launch(command);
+                }
+            }
+            c_hist=add_to_history(history,pid,start_time,current_time());
         }
-
-        
     }
+    free(history);
+    return 0;
 }
