@@ -111,10 +111,13 @@ int launch(char **command_line)
         printf("Fork failed.\n");
         return -1;
     }
-    else if (pid == 0)
-    {
+    else if (pid == 0){
+        if (strcmp(command_line[0],"history")==0)
+        {
+            print_history();
+            exit(0);
+        }
         execvp(command_line[0], command_line);
-        // If execvp fails
         printf("Command not found: %s\n", command_line[0]);
         exit(1);
     }
@@ -210,8 +213,7 @@ char ***pipe_manager(char **cmds)
 // checks if command has pipes
 bool hasPipes(char *str)
 {
-    for (int i = 0; str[i] != '\0'; i++)
-    {
+    for (int i = 0; str[i] != '\0'; i++){
         if (str[i] == '|')
         {
             return true;
@@ -220,7 +222,7 @@ bool hasPipes(char *str)
     return false;
 }
 
-// executes commands from script file
+//commands from script file
 int execute_script(char *filename)
 {
     FILE *file = fopen(filename, "r");
@@ -294,6 +296,5 @@ int main()
 
         free(cmd);
     }
-
     return 0;
 }
