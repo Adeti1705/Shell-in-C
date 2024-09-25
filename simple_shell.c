@@ -37,10 +37,10 @@ void print_history()
     printf("\nCommand History:\n");
     for (int i = 0; i < c_hist; i++)
     {
-        printf("Command %d: %s\n", i + 1, history[i]); 
+        printf("Command %d: %s\n", i + 1, history[i]);
         printf("PID: %d\n", pid_history[i]);
         printf("Start Time: %ld\n", time_history[i][0]);
-        printf("Total Duration in microsec: %ld \n", time_history[i][1] - time_history[i][0]);
+        printf("Total Duration in microseconds: %ld \n", time_history[i][1] - time_history[i][0]);
         printf("\n");
     }
 }
@@ -102,8 +102,8 @@ char **break_delim(char *cmd_line, char *delim)
     return word_array;
 }
 
-// executes command without pipes
-int launch(char **command_line)
+// executes command
+int launch(char **command_line, bool background)
 {
     int pid = fork();
     if (pid < 0)
@@ -111,8 +111,9 @@ int launch(char **command_line)
         printf("Fork failed.\n");
         return -1;
     }
-    else if (pid == 0){
-        if (strcmp(command_line[0],"history")==0)
+    else if (pid == 0)
+    {
+        if (strcmp(command_line[0], "history") == 0)
         {
             print_history();
             exit(0);
@@ -123,8 +124,16 @@ int launch(char **command_line)
     }
     else
     {
-        int status;
-        waitpid(pid, &status, 0);
+        if (!background)
+        {
+            // parent waits for non-& commands
+            int status;
+            waitpid(pid, &status, 0);
+        }
+        else
+        {
+            printf("Started background process with PID: %d\n", pid);
+        }
     }
     return pid;
 }
@@ -171,8 +180,7 @@ int pipe_execute(char ***commands)
         }
         else
         {
-            // parent process
-            close(pipefd[1]); 
+            close(pipefd[1]);
             if (inputfd != STDIN_FILENO)
             {
                 close(inputfd);
@@ -183,10 +191,10 @@ int pipe_execute(char ***commands)
         }
     }
 
-    // waiting for all child processes to finish
     int status;
     while (wait(&status) > 0)
-        ;
+    {
+    }
     return lastChildPID;
 }
 
@@ -213,7 +221,8 @@ char ***pipe_manager(char **cmds)
 // checks if command has pipes
 bool hasPipes(char *str)
 {
-    for (int i = 0; str[i] != '\0'; i++){
+    for (int i = 0; str[i] != '\0'; i++)
+    {
         if (str[i] == '|')
         {
             return true;
@@ -222,51 +231,10 @@ bool hasPipes(char *str)
     return false;
 }
 
-//commands from script file
-int execute_script(char *filename)
-{
-    FILE *file = fopen(filename, "r");
-    if (file == NULL)
-    {
-        printf("Error opening file\n");
-        return -1;
-    }
-
-    char line[100];
-    int pid = -1;
-
-    while (fgets(line, 100, file) != NULL)
-    {
-        size_t len = strlen(line);
-        if (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
-        {
-            line[len - 1] = '\0';
-        }
-
-        if (strlen(line) == 0)
-            continue;
-
-        if (hasPipes(line))
-        {
-            char **command_1 = break_delim(line, "|");
-            char ***command_2 = pipe_manager(command_1);
-            pid = pipe_execute(command_2);
-        }
-        else
-        {
-            char **command = break_delim(line, " \n");
-            pid = launch(command);
-        }
-    }
-
-    fclose(file);
-    return pid;
-}
-
 // main shell loop
 int main()
 {
-    sig_handler(); //handles signal
+    sig_handler(); // handles signal
     char *cmd;
     char current_dir[100];
 
@@ -280,21 +248,36 @@ int main()
 
         long start_time = current_time();
         int pid;
+        bool background = false;
+
+        // checks if command ends with '&'
+        size_t len = strlen(cmd);
+        if (len > 0 && cmd[len - 2] == '&')
+        {
+            background = true;
+            cmd[len - 2] = '\0';
+        }
 
         if (hasPipes(cmd))
         {
             char **command_1 = break_delim(cmd, "|");
             char ***command_2 = pipe_manager(command_1);
-            pid = pipe_execute(command_2);
+            pid = pipe_execute(command_2); // Pipe execution not yet supporting background
         }
         else
         {
             char **command = break_delim(cmd, " \n");
-            pid = launch(command);
+            pid = launch(command, background); // Pass the background flag
         }
-        add_to_history(cmd, pid, start_time, current_time());
+
+        // Only add to history for foreground processes
+        if (!background)
+        {
+            add_to_history(cmd, pid, start_time, current_time());
+        }
 
         free(cmd);
+        free(history);
     }
     return 0;
 }
